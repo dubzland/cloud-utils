@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+#
+# Generates customized cloud images (highly opinionated).  Supports the following releases:
+#   - Debian 11 (bullseye)
+#   - Debian 12 (bookworm)
+#
+# Performs the following operations on the image:
+#   - Sets the default locale to en_US.UTF8 and generates locales.
+
+# Requires libguestfs-tools
+
+readonly DEBIAN_BASE_URL="https://cloud.debian.org/images/cloud"
+
+set -o errexit
+set -o pipefail
+set -o nounset
+
+function die() {
+	echo "$*" 1>&2
+	exit -1
+}
+
+IMAGE_FILENAME=""
+IMAGE_URL=""
+CUSTOMIZED_FILENAME=""
+DEFAULT_LOCALE="en_US.UTF-8"
+DHCP_INTERFACES=(ens18)
+
+#
+# Extra commands to be run on the image.
+#
+declare -a EXTRA_COMMANDS
+EXTRA_COMMANDS=()
+# Set default locale to en_US.UTF-8 and generate locales
+EXTRA_COMMANDS+=('echo "locales locales/default_environment_locale select '${DEFAULT_LOCALE}'" | sudo debconf-set-selections')
+EXTRA_COMMANDS+=('echo "locales locales/locales_to_be_generated multiselect '${DEFAULT_LOCALE}' UTF-8" | debconf-set-selections')
+EXTRA_COMMANDS+=('sed -i "s/^# '${DEFAULT_LOCALE}' UTF-8/'${DEFAULT_LOCALE}' UTF-8/" /etc/locale.gen')
+EXTRA_COMMANDS+=('dpkg-reconfigure --frontend noninteractive locales')
+# Limit dhcp on initial boot
+EXTRA_COMMANDS+=('sed -i "s/^source-directory \/run\/network\/interfaces.d/# source-directory \/run\/network\/interfaces.d/" /etc/network/interfaces')
+for iface in "${DHCP_INTERFACES[@]}"; do
+	EXTRA_COMMANDS+=('echo "source /run/network/interfaces.d/'${iface}'" >> /etc/network/interfaces')
+done
+
+printf "\n ** Cloud image preparation **\n\n"
+
+###############################################################################
+# Select a distro                                                             #
+###############################################################################
+PS3=$'\n'"Select a distro: "
+select release in "Debian Bullseye" "Debian Bookworm" "Quit"; do
+	case $release in
+		"Debian Bullseye")
+			IMAGE_FILENAME="debian-11-genericcloud-amd64.qcow2"
+			IMAGE_URL="${DEBIAN_BASE_URL}/bullseye/latest/${IMAGE_FILENAME}"
+			break
+			;;
+		"Debian Bookworm")
+			IMAGE_FILENAME="debian-12-genericcloud-amd64.qcow2"
+			IMAGE_URL="${DEBIAN_BASE_URL}/bookworm/latest/${IMAGE_FILENAME}"
+			break
+			;;
+		"Quit")
+			exit -1
+			;;
+		*)
+			echo "Invalid selection"
+			;;
+	esac
+done
+
+printf "\nBuilding a custom cloud image for $release.\n\n"
+
+CUSTOMIZED_FILENAME="$(basename ${IMAGE_FILENAME} .qcow2).customized.qcow2"
+
+###############################################################################
+# Download the base image if it does not exist
+###############################################################################
+if [[ ! -f "$IMAGE_FILENAME" ]]; then
+	printf "Image $IMAGE_FILENAME not available locally.\nDownloading from ${IMAGE_URL}...\n\n"
+	curl -L -o "$IMAGE_FILENAME" "$IMAGE_URL"
+else
+	printf "Found existing image ${IMAGE_FILENAME}.  Skipping download.\n"
+fi
+
+###############################################################################
+# Prepare for customizations
+###############################################################################
+[[ -f "$CUSTOMIZED_FILENAME" ]] && rm "$CUSTOMIZED_FILENAME"
+cp "$IMAGE_FILENAME" "$CUSTOMIZED_FILENAME"
+
+
+###############################################################################
+# Build the virt-customize args
+###############################################################################
+declare -a CUSTOMIZE_ARGS
+CUSTOMIZE_ARGS=("-a" "$CUSTOMIZED_FILENAME")
+CUSTOMIZE_ARGS+=("--install" "qemu-guest-agent")
+for cmd in "${EXTRA_COMMANDS[@]}"; do
+	CUSTOMIZE_ARGS+=("--run-command" "${cmd}")
+done
+CUSTOMIZE_ARGS+=("--truncate" "/etc/machine-id")
+
+###############################################################################
+# Execute!
+###############################################################################
+printf "\nPreparing custom image ${CUSTOMIZED_FILENAME}...\n\n"
+(
+	set -x; virt-customize "${CUSTOMIZE_ARGS[@]}"
+)
+
+printf "\nCustomized image is available: $CUSTOMIZED_FILENAME\n"
