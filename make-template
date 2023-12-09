@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+
+TEMPLATE_ID=""
+TEMPLATE_NAME=""
+TEMPLATE_STORAGE=""
+TEMPLATE_BRIDGE="vmbr0"
+TEMPLATE_MEMORY="512"
+TEMPLATE_CORES="1"
+TEMPLATE_SOCKETS="1"
+
+function die() {
+	echo $* >&2 && exit -1
+}
+
+function usage() {
+	echo "Usage: $0 [OPTION] IMAGE_FILE"
+	echo "Creates a Proxmox VM template from the specified qcow2 IMAGE_FILE."
+	echo
+	echo "Options:"
+	echo "  -b          Bridge to assign to the VM (defualt vmbr0)"
+	echo "  -c          Cores to assign to the VM (default 1)"
+	echo "  -i          VM id to assign to the template"
+	echo "  -k          CPU sockets to assign to the VM (default 1)"
+	echo "  -m          Memory to assign to the VM (default 512)"
+	echo "  -n          Name to assign to the template"
+	echo "  -s          Proxmox storage used to hold the template and cloud-init drive"
+	echo "  -h          Display this help"
+	echo
+}
+
+while getopts ":b:c:i:k:m:n:s:h" opt; do
+	case ${opt} in
+		b)
+			TEMPLATE_BRIDGE="$OPTARG"
+			;;
+		c)
+			TEMPLATE_CORES="$OPTARG"
+			;;
+		i)
+			TEMPLATE_ID="$OPTARG"
+			;;
+		k)
+			TEMPLATE_SOCKETS="$OPTARG"
+			;;
+		m)
+			TEMPLATE_MEMORY="$OPTARG"
+			;;
+		n)
+			TEMPLATE_NAME="$OPTARG"
+			;;
+		s)
+			TEMPLATE_STORAGE="$OPTARG"
+			;;
+		h)
+			usage && exit 0
+			;;
+		?)
+			die "Invalid option: -${OPTARG}."
+			;;
+	esac
+done
+
+shift $((OPTIND-1))
+
+[[ -n "$TEMPLATE_ID" ]] || die "Template ID (-i) is required"
+[[ -n "$TEMPLATE_NAME" ]] || die "Template name (-n) is required"
+[[ -n "$TEMPLATE_STORAGE" ]] || die "Template storage (-s) is required"
+
+[[ $# -gt 0 ]] || die "IMAGE_FILE is required"
+
+IMAGE_FILE="$1"
+
+# Check for existence
+qm status $TEMPLATE_ID >/dev/null
+if [[ $? -ne 2 ]]; then
+	die "VM with id $TEMPLATE_ID already exists"
+fi
+
+qm create $TEMPLATE_ID \
+	--name $TEMPLATE_NAME \
+	--numa 0 \
+	--ostype l26 \
+	--cores $TEMPLATE_CORES \
+	--sockets $TEMPLATE_SOCKETS \
+	--memory $TEMPLATE_MEMORY \
+	--net0 model=virtio,bridge=${TEMPLATE_BRIDGE}
+
+qm importdisk $TEMPLATE_ID $IMAGE_FILE $TEMPLATE_STORAGE
+
+qm set $TEMPLATE_ID \
+	--scsihw virtio-scsi-pci \
+	--virtio0 ${TEMPLATE_STORAGE}:${TEMPLATE_ID}/vm-${TEMPLATE_ID}-disk-0.raw \
+	--ide2 ${TEMPLATE_STORAGE}:cloudinit \
+	--boot c \
+	--bootdisk virtio0 \
+	--serial0 socket \
+	--vga serial0 \
+	--agent enabled=1
+
+qm template $TEMPLATE_ID
