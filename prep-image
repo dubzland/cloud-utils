@@ -24,7 +24,7 @@ IMAGE_FILENAME=""
 IMAGE_URL=""
 CUSTOMIZED_FILENAME=""
 DEFAULT_LOCALE="en_US.UTF-8"
-DHCP_INTERFACES=(ens18)
+DHCP_INTERFACE="${DHCP_INTERFACE:-ens18}"
 
 #
 # Extra commands to be run on the image.
@@ -38,9 +38,7 @@ EXTRA_COMMANDS+=('sed -i "s/^# '${DEFAULT_LOCALE}' UTF-8/'${DEFAULT_LOCALE}' UTF
 EXTRA_COMMANDS+=('dpkg-reconfigure --frontend noninteractive locales')
 # Limit dhcp on initial boot
 EXTRA_COMMANDS+=('sed -i "s/^source-directory \/run\/network\/interfaces.d/# source-directory \/run\/network\/interfaces.d/" /etc/network/interfaces')
-for iface in "${DHCP_INTERFACES[@]}"; do
-	EXTRA_COMMANDS+=('echo "source /run/network/interfaces.d/'${iface}'" >> /etc/network/interfaces')
-done
+EXTRA_COMMANDS+=('echo "source /run/network/interfaces.d/'${DHCP_INTERFACE}'" >> /etc/network/interfaces')
 
 printf "\n ** Cloud image preparation **\n\n"
 
