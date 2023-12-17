@@ -49,12 +49,12 @@ PS3=$'\n'"Select a distro: "
 select release in "Debian Bullseye" "Debian Bookworm" "Quit"; do
 	case $release in
 		"Debian Bullseye")
-			IMAGE_FILENAME="debian-11-genericcloud-amd64.qcow2"
+			IMAGE_FILENAME="debian-11-generic-amd64.qcow2"
 			IMAGE_URL="${DEBIAN_BASE_URL}/bullseye/latest/${IMAGE_FILENAME}"
 			break
 			;;
 		"Debian Bookworm")
-			IMAGE_FILENAME="debian-12-genericcloud-amd64.qcow2"
+			IMAGE_FILENAME="debian-12-generic-amd64.qcow2"
 			IMAGE_URL="${DEBIAN_BASE_URL}/bookworm/latest/${IMAGE_FILENAME}"
 			break
 			;;
