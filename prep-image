@@ -94,6 +94,7 @@ cp "$IMAGE_FILENAME" "$CUSTOMIZED_FILENAME"
 declare -a CUSTOMIZE_ARGS
 CUSTOMIZE_ARGS=("-a" "$CUSTOMIZED_FILENAME")
 CUSTOMIZE_ARGS+=("--install" "qemu-guest-agent")
+CUSTOMIZE_ARGS+=("--install" "xfsprogs")
 for cmd in "${EXTRA_COMMANDS[@]}"; do
 	CUSTOMIZE_ARGS+=("--run-command" "${cmd}")
 done
